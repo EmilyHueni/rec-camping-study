@@ -1,6 +1,7 @@
 import boto3
 import os
 import pandas as pd
+import dask.dataframe as dd
 
 
 
@@ -44,13 +45,14 @@ df_merge_all_data['campsite'] = ~df_merge_all_data['total_num_campsites'].isnull
 
 print('merged dataframes')
 
-
+ddf = dd.from_pandas(df_merge_all_data, npartitions=4)
+print('transformed into dask dataframe')
 
 def reservations_likely_canceled(row):
     '''if there is another reservation made at a later date that has the same facility and 
     productuctid and is within the same reservation date block (between start and end) then 
     consider this one to be a likely canceled one.'''
-    print(row['index'])
+    #print(row['index'])
     
     if row['campsite'] == False:
         return False
@@ -64,11 +66,11 @@ def reservations_likely_canceled(row):
         
         #select all rows where the start date is after and facil and campsite number are the same
         #(StartA <= EndB) and (EndA >= StartB)
-        df_other_res = df_merge_all_data[(df_merge_all_data['facilityid']==facil) & 
-                      (df_merge_all_data['productid']==campsite) & 
-                      (df_merge_all_data['startdate']<=edate) &
-                      (df_merge_all_data['enddate']>=sdate) &
-                      (df_merge_all_data['orderdate']>odate)]
+        df_other_res = ddf[(ddf['facilityid']==facil) & 
+                      (ddf['productid']==campsite) & 
+                      (ddf['startdate']<=edate) &
+                      (ddf['enddate']>=sdate) &
+                      (ddf['orderdate']>odate)]
         
         if df_other_res.empty:
             return False
@@ -76,11 +78,12 @@ def reservations_likely_canceled(row):
             return True
     
 
-df_merge_all_data.reset_index(inplace=True)
+#df_merge_all_data.reset_index(inplace=True)
 
 
-df_merge_all_data['cancelation_likely'] = df_merge_all_data.apply(reservations_likely_canceled, axis=1)
+#df_merge_all_data['cancelation_likely'] = df_merge_all_data.apply(reservations_likely_canceled, axis=1)
+ddf['cancelation_likely'] = ddf.map_partitions(reservations_likely_canceled, meta=(None, 'boolean')).compute()
 
 output_file = 'fy20_historical_reservations_full_test_cancel.csv'
-df_merge_all_data.to_csv(output_file)
+ddf.to_csv(output_file)
 s3.upload_file(output_file, bucket, output_file)
