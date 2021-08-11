@@ -18,7 +18,7 @@ fy20_historical_reservations_file = 'data/fy20_historical_reservations_full.csv'
 #this is a large file and may take a few minutes
 boto_object = s3.get_object(Bucket=bucket, Key=fy20_historical_reservations_file)
 date_cols = ['startdate', 'enddate', 'orderdate']
-df_all_res = pd.read_csv(boto_object['Body'], parse_dates=date_cols)
+df_all_res = pd.read_csv(boto_object['Body'], parse_dates=date_cols, nrows=100000)
 
 
 print('dowloaded all reservation records from s3')
@@ -45,7 +45,7 @@ df_merge_all_data['campsite'] = ~df_merge_all_data['total_num_campsites'].isnull
 
 print('merged dataframes')
 
-ddf = dd.from_pandas(df_merge_all_data, npartitions=64)
+ddf = dd.from_pandas(df_merge_all_data, npartitions=4)
 print('transformed into dask dataframe')
 
 def reservations_likely_canceled(row):
@@ -53,8 +53,9 @@ def reservations_likely_canceled(row):
     productuctid and is within the same reservation date block (between start and end) then 
     consider this one to be a likely canceled one.'''
     #print(row['index'])
+    print(row['facilityid'])
     
-    if row['campsite'] == False:
+    if row['campsite'].item() == False:
         return False
     else:
         facil = row['facilityid']
@@ -72,7 +73,7 @@ def reservations_likely_canceled(row):
                       (ddf['enddate']>=sdate) &
                       (ddf['orderdate']>odate)]
         
-        if df_other_res.empty:
+        if len(df_other_res.index) == 0:
             return False
         else:
             return True
@@ -82,7 +83,7 @@ def reservations_likely_canceled(row):
 
 
 #df_merge_all_data['cancelation_likely'] = df_merge_all_data.apply(reservations_likely_canceled, axis=1)
-ddf['cancelation_likely'] = ddf.map_partitions(reservations_likely_canceled, meta=(None, 'boolean')).compute()
+ddf['cancelation_likely'] = ddf.map_partitions(reservations_likely_canceled, meta=(None, '?')).compute()
 
 output_file = 'fy20_historical_reservations_full_test_cancel.csv'
 ddf.to_csv(output_file)
