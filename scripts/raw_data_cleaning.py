@@ -45,7 +45,7 @@ df_merge_all_data['campsite'] = ~df_merge_all_data['total_num_campsites'].isnull
 
 print('merged dataframes')
 
-ddf = dd.from_pandas(df_merge_all_data, npartitions=4)
+ddf = dd.from_pandas(df_merge_all_data, npartitions=64)
 print('transformed into dask dataframe')
 
 def reservations_likely_canceled(row):
